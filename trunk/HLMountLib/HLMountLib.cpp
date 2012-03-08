@@ -45,7 +45,9 @@ HLMOUNTLIB_API DWORD g_dPackageSize=0;
 // exported function
 HLMOUNTLIB_API HANDLE CreateNormalMountThread(hlChar *szFileName, LPCWSTR szMountPoint, PBOOL pbMounted)
 {
-	if( *pbMounted || g_bMounted )return NULL;
+	if( *pbMounted || g_bMounted )
+		return NULL;
+
 	LPMOUNTDATA pMountData = new MOUNTDATA(szFileName, szMountPoint, pbMounted);
 	HANDLE hReturnValue = CreateThread(NULL, 0, &MountThread, (LPVOID)pMountData, 0, NULL);
 	return hReturnValue;
@@ -53,7 +55,7 @@ HLMOUNTLIB_API HANDLE CreateNormalMountThread(hlChar *szFileName, LPCWSTR szMoun
 
 HLMOUNTLIB_API VOID HLMountShutdown(LPCWSTR szMountPoint)
 {
-	DokanUnmount(szMountPoint[0]);
+	DokanRemoveMountPoint(szMountPoint);
 	hlShutdown();
 }
 
@@ -69,6 +71,8 @@ DWORD WINAPI MountThread(PVOID pParam)
 BOOL MountGCF(const hlChar *szFileName, LPCWSTR szMountPoint, PBOOL pbMounted)
 {
 	hlInitialize();
+
+	MessageBoxD(NULL, L"Library initialised!", L"Notice", MB_OK);
 
 	FILE *pPackageFile = fopen(szFileName, "r");
 	HLPackageType ePackageType;
@@ -87,11 +91,23 @@ BOOL MountGCF(const hlChar *szFileName, LPCWSTR szMountPoint, PBOOL pbMounted)
 	if( ePackageType != HL_PACKAGE_GCF )
 		return FALSE;
 
-	hlUInt uiPackage;
-	if( !hlCreatePackage(ePackageType, &uiPackage) ) return FALSE;
-	if( !hlBindPackage( uiPackage ) ) return FALSE;
+	MessageBoxD(NULL, L"Package is GCF!", L"Notice", MB_OK);
 
-	if( !hlPackageOpenFile(szFileName, HL_MODE_READ | HL_MODE_VOLATILE ) ) return FALSE; //TODO: Check if Steam is running and, if not, make things writeable
+	hlUInt uiPackage;
+	if( !hlCreatePackage(ePackageType, &uiPackage) )
+		return FALSE;
+
+	MessageBoxD(NULL, L"Package created!", L"Notice", MB_OK);
+
+	if( !hlBindPackage( uiPackage ) )
+		return FALSE;
+
+	MessageBoxD(NULL, L"Package bound!", L"Notice", MB_OK);
+
+	if( !hlPackageOpenFile(szFileName, HL_MODE_READ | HL_MODE_VOLATILE ) )
+		return FALSE; //TODO: Check if Steam is running and, if not, make things writeable
+
+	MessageBoxD(NULL, L"Package opened!", L"Notice", MB_OK);
 
 	PDOKAN_OPERATIONS dokanOperations = (PDOKAN_OPERATIONS)malloc(sizeof(DOKAN_OPERATIONS));
 	PDOKAN_OPTIONS dokanOptions = (PDOKAN_OPTIONS)malloc(sizeof(DOKAN_OPTIONS));
@@ -148,10 +164,19 @@ typedef struct ReadPtrs{
 DWORD WINAPI ReadThread(PVOID pParam)
 {
 	PREADPTRS pPtrs = (PREADPTRS)pParam;
-	DWORD dBytesRead = hlStreamRead(pPtrs->pStream, pPtrs->pBuffer, pPtrs->dBufferSize);
-	*pPtrs->pdBytesRead = dBytesRead;
-	delete pPtrs;
-	return !dBytesRead;
+	try
+	{
+		DWORD dBytesRead = hlStreamRead(pPtrs->pStream, pPtrs->pBuffer, pPtrs->dBufferSize);
+		MessageBoxD(NULL, (LPCWSTR)(pPtrs->pBuffer), L"Read:", MB_OK);
+		*pPtrs->pdBytesRead = dBytesRead;
+		return !dBytesRead;
+	}
+	catch(char *e)
+	{
+		MessageBoxD(NULL, e, L"Error:", MB_ICONSTOP);
+		*pPtrs->pdBytesRead = 0;
+		return 1;
+	}
 }
 
 #pragma region DokanFunctions
@@ -212,8 +237,23 @@ int DOKAN_CALLBACK GCFReadFile(
 	HLStream *pStream = PfromC;
 	if( !pStream ) return -ERROR_INVALID_ADDRESS;
 	hlStreamSeek(pStream, Offset, HLSeekMode::HL_SEEK_BEGINNING);
+#if 1
 	WaitForSingleObject( CreateThread(NULL, 0, ReadThread, (LPVOID)new READPTRS(ReadLength, pStream, Buffer, BufferLength), 0, NULL), INFINITE );
-
+#else
+	try
+	{
+		DWORD dBytesRead = hlStreamRead(pStream, Buffer, BufferLength);
+		MessageBoxD(NULL, (LPCWSTR)(Buffer), L"Read:", MB_OK);
+		*ReadLength = dBytesRead;
+		return !dBytesRead;
+	}
+	catch(char *e)
+	{
+		MessageBoxD(NULL, e, L"Error:", MB_ICONSTOP);
+		*ReadLength = 0;
+		return 1;
+	}
+#endif
 	return 0;
 }
 
@@ -309,10 +349,18 @@ int DOKAN_CALLBACK GCFCreateFile(
 	else uiMode |= HL_MODE_VOLATILE|HL_MODE_READ; //Just in case it's not already open for reading.
 	if( bCreate )uiMode |= HL_MODE_CREATE;
 
-	HLStream *pStream;
-	if( !hlPackageCreateStream(pItem, &pStream) ){MessageBoxD(NULL, FileName, L"pStream NULL for file:", MB_ICONERROR); return -ERROR_UNABLE_TO_LOAD_MEDIUM;}
-	if( !hlStreamOpen(pStream, uiMode) ){MessageBoxD(NULL, FileName, HLtoWChar(hlGetString(HL_ERROR)), MB_ICONERROR); hlPackageReleaseStream(pStream); return -ERROR_FILE_INVALID;}
-	DokanFileInfo->Context = StoL(pStream);
+	try
+	{
+		HLStream *pStream;
+		if( !hlPackageCreateStream(pItem, &pStream) ){MessageBoxD(NULL, FileName, L"pStream NULL for file:", MB_ICONERROR); return -ERROR_UNABLE_TO_LOAD_MEDIUM;}
+		if( !hlStreamOpen(pStream, uiMode) ){MessageBoxD(NULL, FileName, HLtoWChar(hlGetString(HL_ERROR)), MB_ICONERROR); hlPackageReleaseStream(pStream); return -ERROR_FILE_INVALID;}
+		DokanFileInfo->Context = StoL(pStream);
+	}
+	catch(char *e)
+	{
+		MessageBoxD(NULL, e, L"Error:", MB_ICONSTOP);;
+		return -ERROR_UNABLE_TO_LOAD_MEDIUM;
+	}
 
 	return 0;
 }
@@ -352,30 +400,38 @@ static int DOKAN_CALLBACK GCFFindFiles(
 	WIN32_FIND_DATAW findData;
 	hlUInt nFileSizeLow;
 	
-	HLDirectoryItem *pFolder = hlFolderGetItemByPath(hlPackageGetRoot(), WtoHLChar(FileName), HLFindType::HL_FIND_ALL);
-	if ( !pFolder ){MessageBoxD(NULL, FileName, L"Folder not found!", MB_ICONERROR); return -ERROR_FILE_NOT_FOUND;}
-
-	HLDirectoryItem *pItem = hlFolderFindFirst(pFolder, "*", static_cast<HLFindType>(HL_FIND_ALL|HL_FIND_NO_RECURSE));
-	while( pItem )
+	try
 	{
-		wcscpy(findData.cFileName, HLtoWChar(hlItemGetName(pItem)));
-		findData.dwFileAttributes = FILE_ATTRIBUTE_VIRTUAL;
-		if( !( ((CDirectoryItem *)pItem)->GetPackage()->GetMapping()->GetMode() & HL_MODE_WRITE ) ) findData.dwFileAttributes |= FILE_ATTRIBUTE_READONLY;
-		if(hlItemGetType(pItem)==HL_ITEM_FOLDER) findData.dwFileAttributes |= FILE_ATTRIBUTE_DIRECTORY;
+		HLDirectoryItem *pFolder = hlFolderGetItemByPath(hlPackageGetRoot(), WtoHLChar(FileName), HLFindType::HL_FIND_ALL);
+		if ( !pFolder ){MessageBoxD(NULL, FileName, L"Folder not found!", MB_ICONERROR); return -ERROR_FILE_NOT_FOUND;}
+
+		HLDirectoryItem *pItem = hlFolderFindFirst(pFolder, "*", static_cast<HLFindType>(HL_FIND_ALL|HL_FIND_NO_RECURSE));
+		while( pItem )
+		{
+			wcscpy(findData.cFileName, HLtoWChar(hlItemGetName(pItem)));
+			findData.dwFileAttributes = FILE_ATTRIBUTE_VIRTUAL;
+			if( !( ((CDirectoryItem *)pItem)->GetPackage()->GetMapping()->GetMode() & HL_MODE_WRITE ) ) findData.dwFileAttributes |= FILE_ATTRIBUTE_READONLY;
+			if(hlItemGetType(pItem)==HL_ITEM_FOLDER) findData.dwFileAttributes |= FILE_ATTRIBUTE_DIRECTORY;
 		
-		hlPackageGetFileSize(pItem, &nFileSizeLow);
-		findData.nFileSizeLow = nFileSizeLow;
-		findData.nFileSizeHigh = 0;
+			hlPackageGetFileSize(pItem, &nFileSizeLow);
+			findData.nFileSizeLow = nFileSizeLow;
+			findData.nFileSizeHigh = 0;
 
 #ifdef HLMOUNTLIB_DEBUG_MESSAGES
-		LPWSTR buffer = new WCHAR[20];
-		_ultow(findData.nFileSizeLow, buffer, 10);
-		MessageBoxD(NULL, buffer, findData.cFileName, MB_OK);
-		delete[] buffer;
+			LPWSTR buffer = new WCHAR[20];
+			_ultow(findData.nFileSizeLow, buffer, 10);
+			MessageBoxD(NULL, buffer, findData.cFileName, MB_OK);
+			delete[] buffer;
 #endif
 
-		FillFindData( &findData, DokanFileInfo );
-		pItem = hlFolderFindNext(pFolder, pItem, "*", static_cast<HLFindType>(HL_FIND_ALL|HL_FIND_NO_RECURSE));
+			FillFindData( &findData, DokanFileInfo );
+			pItem = hlFolderFindNext(pFolder, pItem, "*", static_cast<HLFindType>(HL_FIND_ALL|HL_FIND_NO_RECURSE));
+		}
+	}
+	catch(char *e)
+	{
+		MessageBoxD(NULL, e, L"Error:", MB_ICONSTOP);;
+		return -ERROR_FILE_NOT_FOUND;
 	}
 
 	return 0;
