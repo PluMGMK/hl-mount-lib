@@ -33,7 +33,7 @@ LRESULT CALLBACK	WndProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK	About(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK	MainDialogFunc(HWND, UINT, WPARAM, LPARAM);
 
-#define GCF_TO_MOUNT "D:\\Steam\\steamapps\\source sounds.gcf"
+#define GCF_TO_MOUNT "C:\\Program Files\\Steam\\steamapps\\source 2007 binaries.gcf"
 #define MOUNT_POINT L"S:"
 
 int APIENTRY _tWinMain(HINSTANCE hInstance,
